@@ -153,6 +153,10 @@ export class CreateWorkerDto {
   @IsOptional()
   @IsInt()
   groupId?: number;
+
+  @ApiProperty({ required: false, description: "Upsert mode - update if passport exists" })
+  @IsOptional()
+  upsert?: boolean;
 }
 
 export class UpdateWorkerDto {

@@ -78,7 +78,7 @@ model Worker {
     centerNo         String?
     passport         String      @unique
     constructionSite String?
-    sicilNo          String?     @unique
+    sicilNo          String?
     fullName         String
     fullNameRu       String?
     position         String?
@@ -87,13 +87,13 @@ model Worker {
     hourlyRate       Decimal?    @db.Decimal(10, 2)
     teamDivision     String?
     department       String?
-    phone            String?     @unique
+    phone            String?
     birthDate        DateTime?
     workDays         Int?
-    patentNo         String?     @unique
+    patentNo         String?
     patentStartDate  DateTime?
     patentEndDate    DateTime?
-    inn              String?     @unique
+    inn              String?
     qrCode           String      @unique
     campAddress      String?
     gender           Gender?

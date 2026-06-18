@@ -53,16 +53,10 @@ export class WorkerService {
       where: { passport: payload.passport }
     });
     if (existPassport) {
-      throw new BadRequestException("Работник с таким паспортом уже существует");
-    }
-
-    if (payload.phone) {
-      const existPhone = await this.prisma.worker.findUnique({
-        where: { phone: payload.phone }
-      });
-      if (existPhone) {
-        throw new BadRequestException("Работник с таким номером телефона уже существует");
+      if (payload.upsert) {
+        return this.update(existPassport.id, payload, currentUser);
       }
+      throw new BadRequestException("Работник с таким паспортом уже существует");
     }
 
     const existQrCode = await this.prisma.worker.findUnique({
@@ -465,14 +459,7 @@ export class WorkerService {
       }
     }
 
-    if (payload.phone && payload.phone !== worker.phone) {
-      const existPhone = await this.prisma.worker.findUnique({
-        where: { phone: payload.phone }
-      });
-      if (existPhone) {
-        throw new BadRequestException("Работник с таким номером телефона уже существует");
-      }
-    }
+
 
     if (payload.qrCode && payload.qrCode !== worker.qrCode) {
       const existQrCode = await this.prisma.worker.findUnique({
