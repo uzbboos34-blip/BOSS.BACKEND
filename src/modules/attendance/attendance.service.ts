@@ -96,6 +96,7 @@ export class AttendanceService {
         superAdminId,
         status: payload.status,
         session: payload.session,
+        note: payload.note,
         date: attendanceDate,
         createdBy: user.fullName,
       },

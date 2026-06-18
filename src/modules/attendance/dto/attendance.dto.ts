@@ -31,6 +31,11 @@ export class ScanAttendanceDto {
   @IsOptional()
   @IsDateString()
   date?: string;
+
+  @ApiProperty({ required: false, description: "Optional note or custom reason for status" })
+  @IsOptional()
+  @IsString()
+  note?: string;
 }
 
 export class UpdateAttendanceDto {

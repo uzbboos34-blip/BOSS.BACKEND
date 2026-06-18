@@ -140,6 +140,7 @@ model Attendance {
     status       AttendanceStatus
     session      Int              @default(1) // 1=ertalab, 2=tush, 3=kech
     date         DateTime
+    note         String?
     createdBy    String? 
     createdAt    DateTime         @default(now())
     updatedAt    DateTime         @updatedAt
