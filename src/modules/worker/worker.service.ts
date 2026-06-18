@@ -137,22 +137,37 @@ export class WorkerService {
     } catch (error: any) {
       if (error.code === 'P2002') {
         const target = error.meta?.target;
+        const msg = error.message || '';
         let fieldName = 'уникальное поле';
-        if (Array.isArray(target)) {
-          if (target.some((t: string) => t.includes('passport'))) fieldName = 'паспорт (passport)';
-          else if (target.some((t: string) => t.includes('sicilNo'))) fieldName = 'Sicil No';
-          else if (target.some((t: string) => t.includes('phone'))) fieldName = 'номер телефона (phone)';
-          else if (target.some((t: string) => t.includes('patentNo'))) fieldName = 'номер патента (patentNo)';
-          else if (target.some((t: string) => t.includes('inn'))) fieldName = 'ИНН (inn)';
-          else if (target.some((t: string) => t.includes('qrCode'))) fieldName = 'QR-код (qrCode)';
-        } else if (typeof target === 'string') {
-          if (target.includes('passport')) fieldName = 'паспорт (passport)';
-          else if (target.includes('sicilNo')) fieldName = 'Sicil No';
-          else if (target.includes('phone')) fieldName = 'номер телефона (phone)';
-          else if (target.includes('patentNo')) fieldName = 'номер патента (patentNo)';
-          else if (target.includes('inn')) fieldName = 'ИНН (inn)';
-          else if (target.includes('qrCode')) fieldName = 'QR-код (qrCode)';
-        }
+
+        console.error('Prisma P2002 Unique Constraint Violation:', {
+          target,
+          message: msg,
+          payload: {
+            fullName: payload.fullName,
+            passport: payload.passport,
+            sicilNo: payload.sicilNo,
+            phone: payload.phone,
+            patentNo: payload.patentNo,
+            inn: payload.inn,
+            qrCode: payload.qrCode
+          }
+        });
+
+        const checkField = (f: string) => {
+          if (typeof target === 'string' && target.includes(f)) return true;
+          if (Array.isArray(target) && target.some((t: string) => typeof t === 'string' && t.includes(f))) return true;
+          if (msg.includes(f)) return true;
+          return false;
+        };
+
+        if (checkField('passport')) fieldName = 'паспорт (passport)';
+        else if (checkField('sicilNo')) fieldName = 'Sicil No';
+        else if (checkField('phone')) fieldName = 'номер телефона (phone)';
+        else if (checkField('patentNo')) fieldName = 'номер патента (patentNo)';
+        else if (checkField('inn')) fieldName = 'ИНН (inn)';
+        else if (checkField('qrCode')) fieldName = 'QR-код (qrCode)';
+
         throw new BadRequestException(`Работник с таким значением "${fieldName}" уже существует`);
       }
       throw error;
