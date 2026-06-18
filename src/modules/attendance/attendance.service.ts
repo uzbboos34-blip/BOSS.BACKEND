@@ -322,34 +322,44 @@ export class AttendanceService {
     if (!supervisor)
       throw new BadRequestException("Supervisor topilmadi yoki bu branchga tegishli emas");
 
-    // Workerlarni tekshirish
+    // Workerlarni tekshirish (faqat shu branchga tegishli bo'lganlarini)
     const workers = await this.prisma.worker.findMany({
       where: { id: { in: payload.workerIds }, superAdminId },
       select: { id: true },
     });
-    if (workers.length !== payload.workerIds.length) {
-      throw new BadRequestException(
-        "Ba'zi workerlar topilmadi yoki bu branchga tegishli emas",
-      );
+    const validWorkerIds = workers.map(w => w.id);
+
+    if (validWorkerIds.length === 0) {
+      return {
+        success: true,
+        message: "Biriktiriladigan ishchilar topilmadi",
+      };
     }
 
-    // Upsert: allaqachon biriktirilgan bo'lsa o'tkazib yuboriladi
-    const created: number[] = [];
-    for (const workerId of payload.workerIds) {
-      const exists = await this.prisma.supervisorWorker.findUnique({
-        where: { workerId },
+    // Allaqachon biriktirilgan workerlarni topish (istalgan supervisorga)
+    const existingAssignments = await this.prisma.supervisorWorker.findMany({
+      where: { workerId: { in: validWorkerIds } },
+      select: { workerId: true },
+    });
+    const assignedWorkerIds = new Set(existingAssignments.map(a => a.workerId));
+
+    // Faqat hali biriktirilmaganlarini filtrlash
+    const toAssignIds = validWorkerIds.filter(id => !assignedWorkerIds.has(id));
+
+    if (toAssignIds.length > 0) {
+      await this.prisma.supervisorWorker.createMany({
+        data: toAssignIds.map(workerId => ({
+          supervisorId: payload.supervisorId,
+          workerId,
+          superAdminId
+        })),
+        skipDuplicates: true,
       });
-      if (!exists) {
-        await this.prisma.supervisorWorker.create({
-          data: { supervisorId: payload.supervisorId, workerId, superAdminId },
-        });
-        created.push(workerId);
-      }
     }
 
     return {
       success: true,
-      message: `${created.length} ta worker supervisorga biriktirildi`,
+      message: `${toAssignIds.length} ta worker supervisorga muvaffaqiyatli biriktirildi`,
     };
   }
 
