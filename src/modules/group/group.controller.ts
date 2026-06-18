@@ -6,6 +6,7 @@ import { RoleGuard } from "src/common/guards/role.guard";
 import { Roles } from "src/common/decorators/roles";
 import { Role } from "@prisma/client";
 import { CreateGroupDto, UpdateGroupDto } from "./dto/create-group.dto";
+import { SkipThrottle } from "@nestjs/throttler";
 
 @ApiTags('group')
 @Controller("group")
@@ -21,6 +22,7 @@ export class GroupController {
     return this.groupService.create(payload, req['user']);
   }
 
+  @SkipThrottle()
   @UseGuards(AuthGuard, RoleGuard)
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: 'Find or create a group by name (used during import)' })

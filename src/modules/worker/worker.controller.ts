@@ -6,6 +6,7 @@ import { RoleGuard } from "src/common/guards/role.guard";
 import { Roles } from "src/common/decorators/roles";
 import { Role } from "@prisma/client";
 import { CreateWorkerDto, UpdateWorkerDto } from "./dto/create-worker.dto";
+import { SkipThrottle } from "@nestjs/throttler";
 
 @ApiTags('worker')
 @Controller('worker')
@@ -13,6 +14,7 @@ import { CreateWorkerDto, UpdateWorkerDto } from "./dto/create-worker.dto";
 export class WorkerController {
   constructor(private readonly workerService: WorkerService) {}
 
+  @SkipThrottle()
   @UseGuards(AuthGuard, RoleGuard)
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: 'Create a worker' })

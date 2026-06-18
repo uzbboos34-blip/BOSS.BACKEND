@@ -6,6 +6,7 @@ import { Roles } from "src/common/decorators/roles";
 import { RoleGuard } from "src/common/guards/role.guard";
 import { Role } from "@prisma/client";
 import { CreateSpecializationDto, UpdateSpecializationDto } from "./dto/create-specialization.dto";
+import { SkipThrottle } from "@nestjs/throttler";
 
 @ApiTags('specialization')
 @Controller("specialization")
@@ -21,6 +22,7 @@ export class SpecializationController {
         return this.specializationService.create(payload, req['user']);
     }
 
+    @SkipThrottle()
     @ApiOperation({ summary: 'Find or create a specialization by name (used during import)' })
     @Post('find-or-create')
     findOrCreate(@Body() payload: CreateSpecializationDto, @Req() req: any) {
