@@ -337,7 +337,7 @@ export class AttendanceService {
     const created: number[] = [];
     for (const workerId of payload.workerIds) {
       const exists = await this.prisma.supervisorWorker.findUnique({
-        where: { supervisorId_workerId: { supervisorId: payload.supervisorId, workerId } },
+        where: { workerId },
       });
       if (!exists) {
         await this.prisma.supervisorWorker.create({
@@ -351,6 +351,14 @@ export class AttendanceService {
       success: true,
       message: `${created.length} ta worker supervisorga biriktirildi`,
     };
+  }
+
+  async getAllAssignments(currentUser: any) {
+    const user = await this.resolveUser(currentUser);
+    const superAdminId = this.resolveSuperAdminId(currentUser, user);
+    return this.prisma.supervisorWorker.findMany({
+      where: { superAdminId },
+    });
   }
 
   // ─── Biriktirishni olib tashlash ─────────────────────────────────────────────

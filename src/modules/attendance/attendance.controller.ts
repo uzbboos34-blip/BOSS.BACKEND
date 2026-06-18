@@ -135,6 +135,14 @@ export class AttendanceController {
     return this.attendanceService.assignWorkers(payload, req["user"]);
   }
 
+  @UseGuards(AuthGuard, RoleGuard)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
+  @ApiOperation({ summary: "Barcha biriktirishlarni olish" })
+  @Get("assign/all")
+  getAllAssignments(@Req() req: any) {
+    return this.attendanceService.getAllAssignments(req["user"]);
+  }
+
   // ─── Biriktirishni olib tashlash ─────────────────────────────────────────
 
   @UseGuards(AuthGuard, RoleGuard)

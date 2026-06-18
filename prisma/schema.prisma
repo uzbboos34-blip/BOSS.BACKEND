@@ -160,7 +160,7 @@ model SupervisorWorker {
     superAdminId Int
     createdAt    DateTime @default(now())
 
-    @@unique([supervisorId, workerId])
+    @@unique([workerId])
     @@index([supervisorId])
     @@index([workerId])
 }
