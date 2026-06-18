@@ -102,36 +102,61 @@ export class WorkerService {
       patentEndDate.setFullYear(startDate.getFullYear() + 1);
     }
 
-    const worker = await this.prisma.worker.create({
-      data: {
-        centerNo: payload.centerNo,
-        passport: payload.passport,
-        constructionSite: payload.constructionSite,
-        sicilNo: payload.sicilNo,
-        fullName: payload.fullName,
-        fullNameRu: payload.fullNameRu,
-        position: payload.position,
-        citizenship: payload.citizenship,
-        startDate: payload.startDate ? new Date(payload.startDate) : undefined,
-        hourlyRate: payload.hourlyRate,
-        teamDivision: payload.teamDivision,
-        department: payload.department,
-        phone: payload.phone,
-        birthDate: payload.birthDate ? new Date(payload.birthDate) : undefined,
-        workDays: workDays,
-        patentNo: payload.patentNo,
-        patentStartDate: payload.patentStartDate ? new Date(payload.patentStartDate) : undefined,
-        patentEndDate: patentEndDate,
-        inn: payload.inn,
-        qrCode: payload.qrCode,
-        campAddress: payload.campAddress,
-        gender: payload.gender,
-        superAdminId: superAdminId,
-        specializationId: payload.specializationId,
-        groupId: payload.groupId,
-        createdBy: user.fullName,
+    let worker;
+    try {
+      worker = await this.prisma.worker.create({
+        data: {
+          centerNo: payload.centerNo,
+          passport: payload.passport,
+          constructionSite: payload.constructionSite,
+          sicilNo: payload.sicilNo,
+          fullName: payload.fullName,
+          fullNameRu: payload.fullNameRu,
+          position: payload.position,
+          citizenship: payload.citizenship,
+          startDate: payload.startDate ? new Date(payload.startDate) : undefined,
+          hourlyRate: payload.hourlyRate,
+          teamDivision: payload.teamDivision,
+          department: payload.department,
+          phone: payload.phone,
+          birthDate: payload.birthDate ? new Date(payload.birthDate) : undefined,
+          workDays: workDays,
+          patentNo: payload.patentNo,
+          patentStartDate: payload.patentStartDate ? new Date(payload.patentStartDate) : undefined,
+          patentEndDate: patentEndDate,
+          inn: payload.inn,
+          qrCode: payload.qrCode,
+          campAddress: payload.campAddress,
+          gender: payload.gender,
+          superAdminId: superAdminId,
+          specializationId: payload.specializationId,
+          groupId: payload.groupId,
+          createdBy: user.fullName,
+        }
+      });
+    } catch (error: any) {
+      if (error.code === 'P2002') {
+        const target = error.meta?.target;
+        let fieldName = 'уникальное поле';
+        if (Array.isArray(target)) {
+          if (target.some((t: string) => t.includes('passport'))) fieldName = 'паспорт (passport)';
+          else if (target.some((t: string) => t.includes('sicilNo'))) fieldName = 'Sicil No';
+          else if (target.some((t: string) => t.includes('phone'))) fieldName = 'номер телефона (phone)';
+          else if (target.some((t: string) => t.includes('patentNo'))) fieldName = 'номер патента (patentNo)';
+          else if (target.some((t: string) => t.includes('inn'))) fieldName = 'ИНН (inn)';
+          else if (target.some((t: string) => t.includes('qrCode'))) fieldName = 'QR-код (qrCode)';
+        } else if (typeof target === 'string') {
+          if (target.includes('passport')) fieldName = 'паспорт (passport)';
+          else if (target.includes('sicilNo')) fieldName = 'Sicil No';
+          else if (target.includes('phone')) fieldName = 'номер телефона (phone)';
+          else if (target.includes('patentNo')) fieldName = 'номер патента (patentNo)';
+          else if (target.includes('inn')) fieldName = 'ИНН (inn)';
+          else if (target.includes('qrCode')) fieldName = 'QR-код (qrCode)';
+        }
+        throw new BadRequestException(`Работник с таким значением "${fieldName}" уже существует`);
       }
-    });
+      throw error;
+    }
 
     await this.auditLog.log({
       userId: currentUser.id,
