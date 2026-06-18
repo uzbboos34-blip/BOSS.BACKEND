@@ -18,7 +18,16 @@ async function bootstrap() {
       ];
 
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const isLocal = /localhost:\d+$/.test(origin) || /127\.0\.0\.1:\d+$/.test(origin);
+      const isVercel = /\.vercel\.app$/.test(origin);
+      if (isLocal || isVercel || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
