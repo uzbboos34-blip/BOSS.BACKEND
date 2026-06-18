@@ -1,0 +1,195 @@
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+}
+
+enum Role {
+    PLATFORM_SUPER_ADMIN
+    SUPER_ADMIN
+    ADMIN
+    SUPERVISOR
+}
+
+enum AttendanceStatus {
+    PRESENT
+    ABSENT
+    LATE
+    VACATION
+    SICK
+}
+
+enum Gender {
+    MALE
+    FEMALE
+}
+
+enum CitizenShip {
+    UZ
+    RU
+    KZ
+    KG
+    TJ
+    OTHER
+}
+
+model User {
+    id           Int      @id @default(autoincrement())
+    fullName     String
+    phone        String   @unique
+    password     String
+    role         Role
+    isActive     Boolean  @default(true)
+    isBlocked    Boolean  @default(false)
+    superAdminId Int?
+    createdBy    String? 
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+
+    attendancesTaken Attendance[] @relation("AttendanceSupervisor")
+}
+
+model Specialization {
+    id           Int      @id @default(autoincrement())
+    name         String
+    superAdminId Int
+    createdBy    String? 
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+
+    workers Worker[]
+}
+
+model Group {
+    id               Int      @id @default(autoincrement())
+    name             String
+    superAdminId     Int
+    createdBy    String?
+    createdAt        DateTime @default(now())
+    updatedAt        DateTime @updatedAt
+
+    workers        Worker[]
+}
+
+model Worker {
+    id               Int         @id @default(autoincrement())
+    centerNo         String?
+    passport         String      @unique
+    constructionSite String?
+    sicilNo          String?     @unique
+    fullName         String
+    fullNameRu       String?
+    position         String?
+    citizenship      CitizenShip @default(UZ)
+    startDate        DateTime?
+    hourlyRate       Decimal?    @db.Decimal(10, 2)
+    teamDivision     String?
+    department       String?
+    phone            String?     @unique
+    birthDate        DateTime?
+    workDays         Int?
+    patentNo         String?     @unique
+    patentStartDate  DateTime?
+    patentEndDate    DateTime?
+    inn              String?     @unique
+    qrCode           String      @unique
+    campAddress      String?
+    gender           Gender?
+    isActive         Boolean     @default(true)
+    superAdminId     Int
+    specializationId Int?
+    groupId          Int?
+    createdBy    String?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    specialization Specialization? @relation(fields: [specializationId], references: [id])
+    group          Group?          @relation(fields: [groupId], references: [id])
+    attendances    Attendance[]
+    histories      WorkerHistory[]
+    checks         Check[]
+
+    @@index([superAdminId])
+    @@index([groupId])
+}
+
+model Check {
+    id             Int      @id @default(autoincrement())
+    workerId       Int
+    superAdminId   Int
+    paidAt         DateTime
+    validFrom      DateTime
+    validUntil     DateTime
+    numberOfMonths Int      @default(1)
+    createdBy      String? 
+    createdAt      DateTime @default(now())
+
+    worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+    @@index([workerId])
+}
+
+model Attendance {
+    id           Int              @id @default(autoincrement())
+    workerId     Int
+    supervisorId Int?
+    superAdminId Int
+    status       AttendanceStatus
+    session      Int              @default(1) // 1=ertalab, 2=tush, 3=kech
+    date         DateTime
+    createdBy    String? 
+    createdAt    DateTime         @default(now())
+    updatedAt    DateTime         @updatedAt
+
+    worker     Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+    supervisor User?  @relation("AttendanceSupervisor", fields: [supervisorId], references: [id])
+
+    @@unique([workerId, date, session])
+    @@index([workerId])
+    @@index([supervisorId])
+    @@index([date])
+}
+
+model SupervisorWorker {
+    id           Int      @id @default(autoincrement())
+    supervisorId Int
+    workerId     Int
+    superAdminId Int
+    createdAt    DateTime @default(now())
+
+    @@unique([supervisorId, workerId])
+    @@index([supervisorId])
+    @@index([workerId])
+}
+
+model WorkerHistory {
+    id           Int      @id @default(autoincrement())
+    workerId     Int
+    superAdminId Int
+    action       String
+    description  String?
+    createdAt    DateTime @default(now())
+
+    worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+    @@index([workerId])
+}
+
+model ActionLog {
+    id           Int      @id @default(autoincrement())
+    userId       Int
+    userFullName String
+    role         Role
+    action       String   // e.g. "CREATE", "UPDATE", "DELETE"
+    entityType   String   // e.g. "Group", "Specialization", "Worker"
+    entityId     Int?
+    description  String?
+    superAdminId Int
+    createdAt    DateTime @default(now())
+
+    @@index([superAdminId])
+    @@index([createdAt])
+}
