@@ -263,6 +263,7 @@ export class AttendanceService {
       data: {
         ...(payload.status && { status: payload.status }),
         ...(payload.session && { session: payload.session }),
+        ...(payload.hasOwnProperty('note') && { note: payload.note }),
       },
     });
 

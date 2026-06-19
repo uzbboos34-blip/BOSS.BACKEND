@@ -50,6 +50,11 @@ export class UpdateAttendanceDto {
   @Min(1)
   @Max(3)
   session?: number;
+
+  @ApiProperty({ required: false, description: "Optional note or custom reason for status" })
+  @IsOptional()
+  @IsString()
+  note?: string;
 }
 
 export class AssignWorkerDto {
