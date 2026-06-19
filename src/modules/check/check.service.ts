@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, ForbiddenException } from "@nestjs/common";
 import { PrismaService } from "src/prisma/prisma.service";
-import { CreateCheckDto } from "./dto/create-check.dto";
+import { CreateCheckDto, CreateBulkCheckDto } from "./dto/create-check.dto";
 import { Role } from "@prisma/client";
 import { AuditLogService } from "../audit-log/audit-log.service";
 
@@ -100,6 +100,98 @@ export class CheckService {
     return {
       success: true,
       message: "Чек успешно добавлен",
+    };
+  }
+
+  async createBulk(payload: CreateBulkCheckDto, currentUser: any) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: currentUser.id,
+        isBlocked: false,
+        isActive: true,
+      },
+    });
+
+    if (!user) {
+      throw new ForbiddenException("Пользователь не найден");
+    }
+
+    const superAdminId = currentUser.role === Role.SUPER_ADMIN
+      ? currentUser.id
+      : user.superAdminId;
+
+    if (!superAdminId) {
+      throw new BadRequestException("Не удалось определить филиал");
+    }
+
+    const results: any[] = [];
+    const errors: any[] = [];
+
+    for (const passport of payload.passports) {
+      try {
+        const worker = await this.prisma.worker.findUnique({
+          where: { passport }
+        });
+
+        if (!worker) {
+          throw new BadRequestException(`Работник с паспортом ${passport} не найден`);
+        }
+
+        if (worker.superAdminId !== superAdminId) {
+          throw new ForbiddenException(`У вас нет прав для добавления чека сотруднику ${worker.fullName}`);
+        }
+
+        if (!worker.patentStartDate) {
+          throw new BadRequestException(`У работника ${worker.fullName} не указана дата выдачи патента`);
+        }
+
+        const existingChecks = await this.prisma.check.findMany({
+          where: { workerId: worker.id },
+          orderBy: { validUntil: 'desc' }
+        });
+
+        let validFrom = new Date(worker.patentStartDate);
+        if (existingChecks.length > 0) {
+          validFrom = new Date(existingChecks[0].validUntil);
+        }
+
+        const validUntil = new Date(validFrom);
+        validUntil.setMonth(validUntil.getMonth() + payload.numberOfMonths);
+
+        const check = await this.prisma.check.create({
+          data: {
+            workerId: worker.id,
+            superAdminId: worker.superAdminId,
+            paidAt: new Date(payload.paidAt),
+            validFrom,
+            validUntil,
+            numberOfMonths: payload.numberOfMonths,
+            createdBy: user.fullName
+          }
+        });
+
+        await this.auditLog.log({
+          userId: currentUser.id,
+          userFullName: user.fullName,
+          role: currentUser.role,
+          action: 'CREATE',
+          entityType: 'Check',
+          entityId: check.id,
+          description: `Добавлен чек оплаты на ${check.numberOfMonths} мес. для рабочего "${worker.fullName}" (в пакете)`,
+          superAdminId,
+        });
+
+        results.push({ passport, success: true, workerName: worker.fullName });
+      } catch (err) {
+        errors.push({ passport, message: err.message || 'Ошибка добавления чека' });
+      }
+    }
+
+    return {
+      success: true,
+      message: `Обработано чеков: ${results.length} успешно, ${errors.length} с ошибками`,
+      results,
+      errors
     };
   }
 

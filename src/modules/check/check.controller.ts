@@ -5,7 +5,7 @@ import { AuthGuard } from "src/common/guards/token.guard";
 import { RoleGuard } from "src/common/guards/role.guard";
 import { Roles } from "src/common/decorators/roles";
 import { Role } from "@prisma/client";
-import { CreateCheckDto } from "./dto/create-check.dto";
+import { CreateCheckDto, CreateBulkCheckDto } from "./dto/create-check.dto";
 
 @ApiTags('check')
 @Controller('check')
@@ -19,6 +19,14 @@ export class CheckController {
   @Post()
   create(@Body() payload: CreateCheckDto, @Req() req: any) {
     return this.checkService.create(payload, req['user']);
+  }
+
+  @UseGuards(AuthGuard, RoleGuard)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({ summary: 'Register a check payment for multiple workers' })
+  @Post('bulk')
+  createBulk(@Body() payload: CreateBulkCheckDto, @Req() req: any) {
+    return this.checkService.createBulk(payload, req['user']);
   }
 
   @UseGuards(AuthGuard, RoleGuard)
