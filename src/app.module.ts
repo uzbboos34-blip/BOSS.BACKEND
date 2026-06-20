@@ -13,6 +13,7 @@ import { WorkerModule } from './modules/worker/worker.module';
 import { CheckModule } from './modules/check/check.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     CheckModule,
     AttendanceModule,
     DashboardModule,
+    HealthModule,
   ],
   providers: [
     {
