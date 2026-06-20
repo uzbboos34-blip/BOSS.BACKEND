@@ -49,6 +49,8 @@ export class AttendanceController {
   @ApiQuery({ name: "supervisorId", required: false, description: "Supervisor ID" })
   @ApiQuery({ name: "session", required: false, description: "Sessiya (1, 2, 3)" })
   @ApiQuery({ name: "status", required: false, description: "Holat (PRESENT, ABSENT, LATE, VACATION, SICK)" })
+  @ApiQuery({ name: "page", required: false })
+  @ApiQuery({ name: "limit", required: false })
   @Get()
   findAll(
     @Req() req: any,
@@ -56,12 +58,16 @@ export class AttendanceController {
     @Query("supervisorId") supervisorId?: string,
     @Query("session") session?: string,
     @Query("status") status?: string,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string,
   ) {
     return this.attendanceService.findAll(req["user"], {
       date,
       supervisorId: supervisorId ? Number(supervisorId) : undefined,
       session: session ? Number(session) : undefined,
       status,
+      page,
+      limit,
     });
   }
 

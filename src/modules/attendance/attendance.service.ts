@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  OnModuleInit,
 } from "@nestjs/common";
 import { PrismaService } from "src/prisma/prisma.service";
 import { Role } from "@prisma/client";
@@ -10,11 +11,40 @@ import { AuditLogService } from "../audit-log/audit-log.service";
 import { AssignWorkerDto, ScanAttendanceDto, UpdateAttendanceDto } from "./dto/attendance.dto";
 
 @Injectable()
-export class AttendanceService {
+export class AttendanceService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
   ) {}
+
+  onModuleInit() {
+    this.scheduleCleanup();
+  }
+
+  private scheduleCleanup() {
+    const runCleanup = async () => {
+      try {
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        const result = await this.prisma.attendance.deleteMany({
+          where: {
+            date: {
+              lt: ninetyDaysAgo,
+            },
+          },
+        });
+        console.log(`[CLEANUP] Deleted ${result.count} attendance records older than 90 days.`);
+      } catch (e) {
+        console.error('[CLEANUP] Failed to cleanup old attendance records:', e);
+      }
+    };
+
+    // Run immediately on startup
+    runCleanup();
+
+    // Run every 24 hours (24 * 60 * 60 * 1000)
+    setInterval(runCleanup, 86400000);
+  }
 
   // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -136,6 +166,8 @@ export class AttendanceService {
       supervisorId?: number;
       session?: number;
       status?: string;
+      page?: string | number;
+      limit?: string | number;
     },
   ) {
     const user = await this.resolveUser(currentUser);
@@ -153,18 +185,44 @@ export class AttendanceService {
     if (filters.session) where.session = Number(filters.session);
     if (filters.status) where.status = filters.status;
 
-    return this.prisma.attendance.findMany({
+    const page = filters.page ? Number(filters.page) : undefined;
+    const limit = filters.limit ? Number(filters.limit) : 10;
+
+    let totalCount = 0;
+    let totalPages = 0;
+
+    if (page !== undefined) {
+      totalCount = await this.prisma.attendance.count({ where });
+      totalPages = Math.ceil(totalCount / limit);
+    }
+
+    const data = await this.prisma.attendance.findMany({
       where,
       include: {
         worker: {
-          select: { id: true, fullName: true, passport: true, qrCode: true },
+          select: { id: true, fullName: true, passport: true, qrCode: true, group: { select: { id: true, name: true } } },
         },
         supervisor: {
           select: { id: true, fullName: true, role: true },
         },
       },
       orderBy: [{ date: "desc" }, { session: "asc" }],
+      ...(page !== undefined && {
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
     });
+
+    if (page !== undefined) {
+      return {
+        data,
+        totalCount,
+        totalPages,
+        currentPage: page,
+      };
+    }
+
+    return data;
   }
 
   // ─── Supervisor: faqat o'zi olgan davomatlar ────────────────────────────────

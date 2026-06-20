@@ -35,8 +35,12 @@ export class WorkerController {
     @Query('job') job?: string,
     @Query('brigade') brigade?: string,
     @Query('color') color?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('isActive') isActive?: string,
+    @Query('search') search?: string,
   ) {
-    return this.workerService.findAll(req['user'], { name, passport, qr, job, brigade, color });
+    return this.workerService.findAll(req['user'], { name, passport, qr, job, brigade, color, page, limit, isActive, search });
   }
 
   @UseGuards(AuthGuard, RoleGuard)

@@ -184,7 +184,7 @@ export class WorkerService {
     };
   }
 
-  async findAll(currentUser: any, query?: { name?: string; passport?: string; qr?: string; job?: string; brigade?: string; color?: string }) {
+  async findAll(currentUser: any, query?: { name?: string; passport?: string; qr?: string; job?: string; brigade?: string; color?: string; page?: string | number; limit?: string | number; isActive?: string | boolean; search?: string }) {
     const user = await this.prisma.user.findUnique({
       where: {
         id: currentUser.id,
@@ -206,6 +206,18 @@ export class WorkerService {
     }
 
     const where: any = { superAdminId };
+
+    if (query?.isActive !== undefined) {
+      where.isActive = query.isActive === 'true' || query.isActive === true;
+    }
+
+    if (query?.search) {
+      where.OR = [
+        { fullName: { contains: query.search, mode: 'insensitive' } },
+        { passport: { contains: query.search, mode: 'insensitive' } },
+        { qrCode: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
 
     if (query?.name) {
       where.fullName = { contains: query.name, mode: 'insensitive' };
@@ -258,6 +270,17 @@ export class WorkerService {
       }
     }
 
+    const page = query?.page ? Number(query.page) : undefined;
+    const limit = query?.limit ? Number(query.limit) : 10;
+
+    let totalCount = 0;
+    let totalPages = 0;
+
+    if (page !== undefined) {
+      totalCount = await this.prisma.worker.count({ where });
+      totalPages = Math.ceil(totalCount / limit);
+    }
+
     const workers = await this.prisma.worker.findMany({
       where,
       include: {
@@ -268,12 +291,16 @@ export class WorkerService {
         }
       },
       orderBy: { createdAt: "desc" },
+      ...(page !== undefined && {
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
     });
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return workers.map(worker => {
+    const mapped = workers.map(worker => {
       const totalCheckMonths = worker.checks.reduce((sum, c) => sum + c.numberOfMonths, 0);
       
       let remainingCheckDays: number | null = null;
@@ -304,6 +331,26 @@ export class WorkerService {
         remainingPatentDays,
       };
     });
+
+    if (page !== undefined) {
+      const [totalWorkersCount, activeWorkersCount] = await Promise.all([
+        this.prisma.worker.count({ where: { superAdminId } }),
+        this.prisma.worker.count({ where: { superAdminId, isActive: true } }),
+      ]);
+      return {
+        data: mapped,
+        totalCount,
+        totalPages,
+        currentPage: page,
+        stats: {
+          total: totalWorkersCount,
+          active: activeWorkersCount,
+          archive: totalWorkersCount - activeWorkersCount,
+        }
+      };
+    }
+
+    return mapped;
   }
 
   async findByGroup(groupId: number, currentUser: any) {
