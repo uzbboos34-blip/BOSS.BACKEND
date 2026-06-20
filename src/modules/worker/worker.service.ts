@@ -184,6 +184,328 @@ export class WorkerService {
     };
   }
 
+  async bulkImport(payload: { workers: CreateWorkerDto[] }, currentUser: any) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: currentUser.id,
+        isBlocked: false,
+        isActive: true,
+      },
+    });
+
+    if (!user) {
+      throw new ForbiddenException("Пользователь не найден");
+    }
+
+    const superAdminId = currentUser.role === Role.SUPER_ADMIN
+      ? currentUser.id
+      : user.superAdminId;
+
+    if (!superAdminId) {
+      throw new BadRequestException("Не удалось определить филиал");
+    }
+
+    const workersData = payload.workers || [];
+    if (workersData.length === 0) {
+      return {
+        success: true,
+        createdCount: 0,
+        updatedCount: 0,
+        skippedCount: 0,
+        errors: [],
+      };
+    }
+
+    // ─── 1. Find or create groups in bulk ───
+    const departments = Array.from(
+      new Set(
+        workersData
+          .map(w => w.department?.trim())
+          .filter(Boolean)
+      )
+    ) as string[];
+
+    const existingGroups = await this.prisma.group.findMany({
+      where: { superAdminId, name: { in: departments } },
+    });
+    const groupMap = new Map<string, number>();
+    existingGroups.forEach(g => groupMap.set(g.name.trim().toLowerCase(), g.id));
+
+    for (const deptName of departments) {
+      const key = deptName.toLowerCase();
+      if (!groupMap.has(key)) {
+        const newGroup = await this.prisma.group.create({
+          data: { name: deptName, superAdminId, createdBy: user.fullName },
+        });
+        groupMap.set(key, newGroup.id);
+      }
+    }
+
+    // ─── 2. Find or create specializations in bulk ───
+    const teamDivisions = Array.from(
+      new Set(
+        workersData
+          .map(w => w.teamDivision?.trim())
+          .filter(Boolean)
+      )
+    ) as string[];
+
+    const existingSpecs = await this.prisma.specialization.findMany({
+      where: { superAdminId, name: { in: teamDivisions } },
+    });
+    const specMap = new Map<string, number>();
+    existingSpecs.forEach(s => specMap.set(s.name.trim().toLowerCase(), s.id));
+
+    for (const specName of teamDivisions) {
+      const key = specName.toLowerCase();
+      if (!specMap.has(key)) {
+        const newSpec = await this.prisma.specialization.create({
+          data: { name: specName, superAdminId, createdBy: user.fullName },
+        });
+        specMap.set(key, newSpec.id);
+      }
+    }
+
+    // ─── 3. Load all existing workers of the branch ───
+    const existingWorkers = await this.prisma.worker.findMany({
+      where: { superAdminId },
+      select: {
+        id: true,
+        passport: true,
+        qrCode: true,
+        fullName: true,
+        fullNameRu: true,
+        phone: true,
+        position: true,
+        hourlyRate: true,
+        inn: true,
+        campAddress: true,
+        constructionSite: true,
+        groupId: true,
+        specializationId: true,
+        patentNo: true,
+        patentStartDate: true,
+        patentEndDate: true,
+        birthDate: true,
+        startDate: true,
+        gender: true,
+        citizenship: true,
+        centerNo: true,
+        sicilNo: true,
+        teamDivision: true,
+        department: true,
+      },
+    });
+
+    const passportMap = new Map<string, typeof existingWorkers[0]>();
+    const qrCodeMap = new Map<string, typeof existingWorkers[0]>();
+
+    existingWorkers.forEach(w => {
+      if (w.passport) passportMap.set(w.passport.trim().toLowerCase(), w);
+      if (w.qrCode) qrCodeMap.set(w.qrCode.trim().toLowerCase(), w);
+    });
+
+    // ─── 4. Evaluate and split workers into insert / update / skip pools ───
+    const toCreate: any[] = [];
+    const toUpdate: { id: number; data: any }[] = [];
+    let skippedCount = 0;
+    const errors: string[] = [];
+
+    // Helper for safe value normalization & comparison
+    const differs = (val1: any, val2: any) => {
+      const norm = (v: any) => {
+        if (v === null || v === undefined) return '';
+        if (v instanceof Date) return v.toISOString().split('T')[0];
+        if (typeof v === 'string') {
+          const trimmed = v.trim();
+          if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+            return trimmed.split('T')[0];
+          }
+          return trimmed;
+        }
+        if (typeof v === 'object' && v.constructor?.name === 'Decimal') {
+          return Number(v).toFixed(2);
+        }
+        if (typeof v === 'number') return v.toFixed(2);
+        return String(v);
+      };
+      return norm(val1) !== norm(val2);
+    };
+
+    for (let i = 0; i < workersData.length; i++) {
+      const wDto = workersData[i];
+      const passportKey = wDto.passport?.trim().toLowerCase();
+      const qrCodeKey = wDto.qrCode?.trim().toLowerCase() || passportKey;
+
+      if (!passportKey) {
+        errors.push(`Строка ${i + 2}: Отсутствует паспорт`);
+        continue;
+      }
+
+      // Map group and specialization IDs
+      let gId: number | undefined = undefined;
+      if (wDto.department) {
+        gId = groupMap.get(wDto.department.trim().toLowerCase());
+      }
+      let sId: number | undefined = undefined;
+      if (wDto.teamDivision) {
+        sId = specMap.get(wDto.teamDivision.trim().toLowerCase());
+      }
+
+      // Calculate auxiliary fields
+      const workDays = this.calculateDaysUntilBirthday(wDto.birthDate) ?? null;
+      let patentEndDate: Date | null = null;
+      if (wDto.patentStartDate) {
+        const startDate = new Date(wDto.patentStartDate);
+        patentEndDate = new Date(startDate);
+        patentEndDate.setFullYear(startDate.getFullYear() + 1);
+      }
+
+      const existingByPassport = passportMap.get(passportKey);
+
+      if (existingByPassport) {
+        // Evaluate for modifications
+        const hasChanges =
+          differs(existingByPassport.fullName, wDto.fullName) ||
+          differs(existingByPassport.fullNameRu, wDto.fullNameRu) ||
+          differs(existingByPassport.phone, wDto.phone) ||
+          differs(existingByPassport.position, wDto.position) ||
+          differs(existingByPassport.hourlyRate, wDto.hourlyRate) ||
+          differs(existingByPassport.inn, wDto.inn) ||
+          differs(existingByPassport.campAddress, wDto.campAddress) ||
+          differs(existingByPassport.constructionSite, wDto.constructionSite) ||
+          differs(existingByPassport.groupId, gId) ||
+          differs(existingByPassport.specializationId, sId) ||
+          differs(existingByPassport.patentNo, wDto.patentNo) ||
+          differs(existingByPassport.patentStartDate, wDto.patentStartDate) ||
+          differs(existingByPassport.patentEndDate, patentEndDate) ||
+          differs(existingByPassport.birthDate, wDto.birthDate) ||
+          differs(existingByPassport.startDate, wDto.startDate) ||
+          differs(existingByPassport.gender, wDto.gender) ||
+          differs(existingByPassport.citizenship, wDto.citizenship) ||
+          differs(existingByPassport.centerNo, wDto.centerNo) ||
+          differs(existingByPassport.sicilNo, wDto.sicilNo) ||
+          differs(existingByPassport.qrCode, wDto.qrCode || wDto.passport);
+
+        if (hasChanges) {
+          toUpdate.push({
+            id: existingByPassport.id,
+            data: {
+              fullName: wDto.fullName,
+              fullNameRu: wDto.fullNameRu || null,
+              phone: wDto.phone || null,
+              position: wDto.position || null,
+              hourlyRate: wDto.hourlyRate || null,
+              inn: wDto.inn || null,
+              campAddress: wDto.campAddress || null,
+              constructionSite: wDto.constructionSite || null,
+              groupId: gId || null,
+              specializationId: sId || null,
+              patentNo: wDto.patentNo || null,
+              patentStartDate: wDto.patentStartDate ? new Date(wDto.patentStartDate) : null,
+              patentEndDate: patentEndDate,
+              birthDate: wDto.birthDate ? new Date(wDto.birthDate) : null,
+              startDate: wDto.startDate ? new Date(wDto.startDate) : null,
+              gender: wDto.gender || null,
+              citizenship: wDto.citizenship || 'UZ',
+              centerNo: wDto.centerNo || null,
+              sicilNo: wDto.sicilNo || null,
+              qrCode: wDto.qrCode || wDto.passport,
+              teamDivision: wDto.teamDivision || null,
+              department: wDto.department || null,
+              workDays: workDays,
+            },
+          });
+        } else {
+          skippedCount++;
+        }
+      } else {
+        // Verify QR uniqueness
+        const existingByQr = qrCodeMap.get(qrCodeKey);
+        if (existingByQr) {
+          errors.push(
+            `Строка ${i + 2} (${wDto.fullName}): QR-код ${wDto.qrCode || wDto.passport} уже занят другим сотрудником (${existingByQr.fullName})`
+          );
+          continue;
+        }
+
+        // Add to creation queue
+        const newWorkerData = {
+          fullName: wDto.fullName,
+          fullNameRu: wDto.fullNameRu || null,
+          passport: wDto.passport,
+          phone: wDto.phone || null,
+          position: wDto.position || null,
+          hourlyRate: wDto.hourlyRate || null,
+          inn: wDto.inn || null,
+          campAddress: wDto.campAddress || null,
+          constructionSite: wDto.constructionSite || null,
+          groupId: gId || null,
+          specializationId: sId || null,
+          patentNo: wDto.patentNo || null,
+          patentStartDate: wDto.patentStartDate ? new Date(wDto.patentStartDate) : null,
+          patentEndDate: patentEndDate,
+          birthDate: wDto.birthDate ? new Date(wDto.birthDate) : null,
+          startDate: wDto.startDate ? new Date(wDto.startDate) : null,
+          gender: wDto.gender || null,
+          citizenship: wDto.citizenship || 'UZ',
+          centerNo: wDto.centerNo || null,
+          sicilNo: wDto.sicilNo || null,
+          qrCode: wDto.qrCode || wDto.passport,
+          teamDivision: wDto.teamDivision || null,
+          department: wDto.department || null,
+          workDays: workDays,
+          superAdminId: superAdminId,
+          createdBy: user.fullName,
+        };
+
+        toCreate.push(newWorkerData);
+
+        // Put in local maps to catch duplicates within the Excel sheet itself!
+        passportMap.set(passportKey, { id: 0, ...newWorkerData } as any);
+        qrCodeMap.set(qrCodeKey, { id: 0, ...newWorkerData } as any);
+      }
+    }
+
+    // ─── 5. Execute DB Writes ───
+    if (toCreate.length > 0) {
+      await this.prisma.worker.createMany({
+        data: toCreate,
+      });
+    }
+
+    for (let i = 0; i < toUpdate.length; i += 50) {
+      const chunk = toUpdate.slice(i, i + 50);
+      await Promise.all(
+        chunk.map(item =>
+          this.prisma.worker.update({
+            where: { id: item.id },
+            data: item.data,
+          })
+        )
+      );
+    }
+
+    await this.auditLog.log({
+      userId: currentUser.id,
+      userFullName: user.fullName,
+      role: currentUser.role,
+      action: 'UPDATE',
+      entityType: 'Worker',
+      entityId: superAdminId,
+      description: `Импорт списка рабочих: Создано=${toCreate.length}, Обновлено=${toUpdate.length}, Пропущено=${skippedCount}, Ошибок=${errors.length}`,
+      superAdminId,
+    });
+
+    return {
+      success: true,
+      createdCount: toCreate.length,
+      updatedCount: toUpdate.length,
+      skippedCount,
+      errors,
+    };
+  }
+
   async findAll(currentUser: any, query?: { name?: string; passport?: string; qr?: string; job?: string; brigade?: string; color?: string; page?: string | number; limit?: string | number; isActive?: string | boolean; search?: string }) {
     const user = await this.prisma.user.findUnique({
       where: {

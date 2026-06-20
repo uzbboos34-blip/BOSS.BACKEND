@@ -23,6 +23,15 @@ export class WorkerController {
     return this.workerService.create(payload, req['user']);
   }
 
+  @SkipThrottle()
+  @UseGuards(AuthGuard, RoleGuard)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({ summary: 'Bulk import/upsert workers' })
+  @Post('bulk-import')
+  bulkImport(@Body() payload: { workers: CreateWorkerDto[] }, @Req() req: any) {
+    return this.workerService.bulkImport(payload, req['user']);
+  }
+
   @UseGuards(AuthGuard, RoleGuard)
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.SUPERVISOR)
   @ApiOperation({ summary: 'Get all workers' })

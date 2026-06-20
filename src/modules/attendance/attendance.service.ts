@@ -97,6 +97,18 @@ export class AttendanceService implements OnModuleInit {
       ? this.dayStart(new Date(payload.date))
       : this.dayStart(new Date());
 
+    if (currentUser.role === Role.SUPERVISOR) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      if (attendanceDate.getTime() !== today.getTime() && attendanceDate.getTime() !== yesterday.getTime()) {
+        throw new BadRequestException("Supervayzer faqat bugungi yoki kechagi kun uchun davomat yubora oladi");
+      }
+    }
+
     const existing = await this.prisma.attendance.findUnique({
       where: {
         workerId_date_session: {
