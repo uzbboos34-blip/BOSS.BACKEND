@@ -48,8 +48,17 @@ export class WorkerController {
     @Query('limit') limit?: string,
     @Query('isActive') isActive?: string,
     @Query('search') search?: string,
+    @Query('birthdayDays') birthdayDays?: string,
   ) {
-    return this.workerService.findAll(req['user'], { name, passport, qr, job, brigade, color, page, limit, isActive, search });
+    return this.workerService.findAll(req['user'], { name, passport, qr, job, brigade, color, page, limit, isActive, search, birthdayDays });
+  }
+
+  @UseGuards(AuthGuard, RoleGuard)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.SUPERVISOR)
+  @ApiOperation({ summary: 'Get active workers with birthdays today' })
+  @Get('birthdays/today')
+  findBirthdaysToday(@Req() req: any) {
+    return this.workerService.findBirthdaysToday(req['user']);
   }
 
   @UseGuards(AuthGuard, RoleGuard)

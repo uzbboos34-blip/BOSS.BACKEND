@@ -506,7 +506,7 @@ export class WorkerService {
     };
   }
 
-  async findAll(currentUser: any, query?: { name?: string; passport?: string; qr?: string; job?: string; brigade?: string; color?: string; page?: string | number; limit?: string | number; isActive?: string | boolean; search?: string }) {
+  async findAll(currentUser: any, query?: { name?: string; passport?: string; qr?: string; job?: string; brigade?: string; color?: string; page?: string | number; limit?: string | number; isActive?: string | boolean; search?: string; birthdayDays?: string }) {
     const user = await this.prisma.user.findUnique({
       where: {
         id: currentUser.id,
@@ -592,13 +592,14 @@ export class WorkerService {
       }
     }
 
+    const hasBirthdayDaysFilter = query?.birthdayDays !== undefined && query.birthdayDays !== '';
     const page = query?.page ? Number(query.page) : undefined;
     const limit = query?.limit ? Number(query.limit) : 10;
 
     let totalCount = 0;
     let totalPages = 0;
 
-    if (page !== undefined) {
+    if (page !== undefined && !hasBirthdayDaysFilter) {
       totalCount = await this.prisma.worker.count({ where });
       totalPages = Math.ceil(totalCount / limit);
     }
@@ -613,7 +614,7 @@ export class WorkerService {
         }
       },
       orderBy: { createdAt: "desc" },
-      ...(page !== undefined && {
+      ...((page !== undefined && !hasBirthdayDaysFilter) && {
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -622,7 +623,7 @@ export class WorkerService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const mapped = workers.map(worker => {
+    let mapped = workers.map(worker => {
       const totalCheckMonths = worker.checks.reduce((sum, c) => sum + c.numberOfMonths, 0);
       
       let remainingCheckDays: number | null = null;
@@ -654,6 +655,21 @@ export class WorkerService {
       };
     });
 
+    if (hasBirthdayDaysFilter) {
+      const daysVal = Number(query.birthdayDays);
+      mapped = mapped.filter(w => {
+        if (!w.birthDate) return false;
+        const remaining = this.calculateDaysUntilBirthday(w.birthDate.toISOString());
+        return remaining === daysVal;
+      });
+
+      if (page !== undefined) {
+        totalCount = mapped.length;
+        totalPages = Math.ceil(totalCount / limit);
+        mapped = mapped.slice((page - 1) * limit, page * limit);
+      }
+    }
+
     if (page !== undefined) {
       const [totalWorkersCount, activeWorkersCount] = await Promise.all([
         this.prisma.worker.count({ where: { superAdminId } }),
@@ -673,6 +689,55 @@ export class WorkerService {
     }
 
     return mapped;
+  }
+
+  async findBirthdaysToday(currentUser: any) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: currentUser.id,
+        isBlocked: false,
+        isActive: true,
+      },
+    });
+
+    if (!user) {
+      throw new ForbiddenException("Пользователь не найден");
+    }
+
+    const superAdminId = currentUser.role === Role.SUPER_ADMIN
+      ? currentUser.id
+      : user.superAdminId;
+
+    if (!superAdminId) {
+      throw new BadRequestException("Не удалось определить филиал");
+    }
+
+    // Fetch all active workers with non-null birthday
+    const workers = await this.prisma.worker.findMany({
+      where: {
+        superAdminId,
+        isActive: true,
+        birthDate: { not: null },
+      },
+      select: {
+        id: true,
+        fullName: true,
+        passport: true,
+        birthDate: true,
+      }
+    });
+
+    const today = new Date();
+    const currentMonth = today.getMonth();
+    const currentDate = today.getDate();
+
+    const birthdayWorkers = workers.filter(w => {
+      if (!w.birthDate) return false;
+      const bDate = new Date(w.birthDate);
+      return bDate.getMonth() === currentMonth && bDate.getDate() === currentDate;
+    });
+
+    return birthdayWorkers;
   }
 
   async findByGroup(groupId: number, currentUser: any) {
