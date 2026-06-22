@@ -20,7 +20,11 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      const isLocal = /localhost:\d+$/.test(origin) || /127\.0\.0\.1:\d+$/.test(origin);
+      const isLocal =
+        /localhost(:\d+)?$/.test(origin) ||
+        /127\.0\.0\.1(:\d+)?$/.test(origin) ||
+        /^capacitor:\/\//.test(origin) ||
+        /^http:\/\/localhost/.test(origin);
       const isVercel = /\.vercel\.app$/.test(origin);
       if (isLocal || isVercel || allowedOrigins.includes(origin)) {
         callback(null, true);
