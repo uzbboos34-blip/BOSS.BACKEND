@@ -225,6 +225,100 @@ export class CheckService {
     });
   }
 
+  private async recalculateWorkerChecks(workerId: number) {
+    const worker = await this.prisma.worker.findUnique({
+      where: { id: workerId },
+      select: { patentStartDate: true }
+    });
+    if (!worker || !worker.patentStartDate) return;
+
+    // Fetch all checks for the worker ordered by id (creation sequence)
+    const checks = await this.prisma.check.findMany({
+      where: { workerId },
+      orderBy: { id: 'asc' }
+    });
+
+    let currentValidFrom = new Date(worker.patentStartDate);
+
+    for (const check of checks) {
+      const validUntil = new Date(currentValidFrom);
+      validUntil.setMonth(validUntil.getMonth() + check.numberOfMonths);
+
+      await this.prisma.check.update({
+        where: { id: check.id },
+        data: {
+          validFrom: currentValidFrom,
+          validUntil: validUntil
+        }
+      });
+
+      currentValidFrom = new Date(validUntil);
+    }
+  }
+
+  async update(id: number, payload: { paidAt: string; numberOfMonths: number }, currentUser: any) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: currentUser.id,
+        isBlocked: false,
+        isActive: true,
+      },
+    });
+
+    if (!user) {
+      throw new ForbiddenException("Пользователь не найден");
+    }
+
+    const superAdminId = currentUser.role === Role.SUPER_ADMIN
+      ? currentUser.id
+      : user.superAdminId;
+
+    if (!superAdminId) {
+      throw new BadRequestException("Не удалось определить филиал");
+    }
+
+    const check = await this.prisma.check.findUnique({
+      where: { id },
+      include: { worker: { select: { fullName: true, id: true } } }
+    });
+
+    if (!check) {
+      throw new BadRequestException("Чек не найден");
+    }
+
+    if (check.superAdminId !== superAdminId) {
+      throw new ForbiddenException("У вас нет прав для редактирования этого чека");
+    }
+
+    // Update the check data
+    await this.prisma.check.update({
+      where: { id },
+      data: {
+        paidAt: new Date(payload.paidAt),
+        numberOfMonths: payload.numberOfMonths,
+      }
+    });
+
+    // Recalculate all checks for this worker (to cascadingly update dates)
+    await this.recalculateWorkerChecks(check.worker.id);
+
+    await this.auditLog.log({
+      userId: currentUser.id,
+      userFullName: user.fullName,
+      role: currentUser.role,
+      action: 'UPDATE',
+      entityType: 'Check',
+      entityId: check.id,
+      description: `Отредактирован чек оплаты для рабочего "${check.worker.fullName}". Оплачено месяцев: ${payload.numberOfMonths}`,
+      superAdminId,
+    });
+
+    return {
+      success: true,
+      message: "Чек успешно обновлен"
+    };
+  }
+
   async remove(id: number, currentUser: any) {
     const user = await this.prisma.user.findUnique({
       where: {
@@ -248,7 +342,7 @@ export class CheckService {
 
     const check = await this.prisma.check.findUnique({
       where: { id },
-      include: { worker: { select: { fullName: true } } }
+      include: { worker: { select: { fullName: true, id: true } } }
     });
 
     if (!check) {
@@ -262,6 +356,9 @@ export class CheckService {
     await this.prisma.check.delete({
       where: { id }
     });
+
+    // Recalculate subsequent checks for this worker to pull them backwards and close gaps
+    await this.recalculateWorkerChecks(check.worker.id);
 
     await this.auditLog.log({
       userId: currentUser.id,

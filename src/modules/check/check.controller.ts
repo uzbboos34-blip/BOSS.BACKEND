@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Req, UseGuards } from "@nestjs/common";
 import { CheckService } from "./check.service";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { AuthGuard } from "src/common/guards/token.guard";
@@ -6,6 +6,7 @@ import { RoleGuard } from "src/common/guards/role.guard";
 import { Roles } from "src/common/decorators/roles";
 import { Role } from "@prisma/client";
 import { CreateCheckDto, CreateBulkCheckDto } from "./dto/create-check.dto";
+import { UpdateCheckDto } from "./dto/update-check.dto";
 
 @ApiTags('check')
 @Controller('check')
@@ -35,6 +36,18 @@ export class CheckController {
   @Get()
   findAll(@Req() req: any) {
     return this.checkService.findAll(req['user']);
+  }
+
+  @UseGuards(AuthGuard, RoleGuard)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({ summary: 'Update a check payment' })
+  @Put(':id')
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() payload: UpdateCheckDto,
+    @Req() req: any
+  ) {
+    return this.checkService.update(id, payload, req['user']);
   }
 
   @UseGuards(AuthGuard, RoleGuard)
