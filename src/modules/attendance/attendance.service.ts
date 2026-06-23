@@ -52,7 +52,7 @@ export class AttendanceService implements OnModuleInit {
     const user = await this.prisma.user.findUnique({
       where: { id: currentUser.id, isBlocked: false, isActive: true },
     });
-    if (!user) throw new ForbiddenException("Foydalanuvchi topilmadi");
+    if (!user) throw new ForbiddenException("Пользователь не найден");
     return user;
   }
 
@@ -61,7 +61,7 @@ export class AttendanceService implements OnModuleInit {
       currentUser.role === Role.SUPER_ADMIN
         ? currentUser.id
         : user.superAdminId;
-    if (!id) throw new BadRequestException("Filial aniqlanmadi");
+    if (!id) throw new BadRequestException("Филиал не определен");
     return id;
   }
 
@@ -78,18 +78,23 @@ export class AttendanceService implements OnModuleInit {
     const user = await this.resolveUser(currentUser);
     const superAdminId = this.resolveSuperAdminId(currentUser, user);
 
-    // Worker ni QR orqali topish
+    // Worker ni QR yoki Pasport orqali topish
     const rawQr = payload.qrCode || "";
     const cleanQr = rawQr.includes(":") ? rawQr.split(":")[0].trim() : rawQr.trim();
 
-    const worker = await this.prisma.worker.findUnique({
+    let worker = await this.prisma.worker.findUnique({
       where: { qrCode: cleanQr },
     });
-    if (!worker) throw new BadRequestException("Bu QR kodli worker topilmadi");
+    if (!worker) {
+      worker = await this.prisma.worker.findUnique({
+        where: { passport: cleanQr },
+      });
+    }
+    if (!worker) throw new BadRequestException("Рабочий с этим QR-кодом не найден");
 
     // Branch tekshiruvi
     if (worker.superAdminId !== superAdminId) {
-      throw new ForbiddenException("Siz bu workerni o'tkaza olmaysiz");
+      throw new ForbiddenException("Вы не можете отметить этого рабочего");
     }
 
     // Shu kun va shu sessiyada allaqachon yozuv bormi?
@@ -105,7 +110,7 @@ export class AttendanceService implements OnModuleInit {
       yesterday.setDate(yesterday.getDate() - 1);
 
       if (attendanceDate.getTime() !== today.getTime() && attendanceDate.getTime() !== yesterday.getTime()) {
-        throw new BadRequestException("Supervayzer faqat bugungi yoki kechagi kun uchun davomat yubora oladi");
+        throw new BadRequestException("Супервайзер может отправлять посещаемость только за сегодня или вчера");
       }
     }
 
@@ -123,10 +128,10 @@ export class AttendanceService implements OnModuleInit {
     });
     if (existing) {
       const takenBy = existing.supervisorId
-        ? `"${existing.supervisor?.fullName}" tomonidan`
-        : "oldin";
+        ? `супервайзером "${existing.supervisor?.fullName}"`
+        : "ранее";
       throw new BadRequestException(
-        `"${worker.fullName}" sessiya ${payload.session} uchun bugun allaqachon ${takenBy} o'tkazilgan`,
+        `"${worker.fullName}" уже отмечен(а) ${takenBy} на сессию ${payload.session} сегодня`,
       );
     }
 
@@ -324,9 +329,9 @@ export class AttendanceService implements OnModuleInit {
       where: { id },
       include: { worker: { select: { fullName: true } } },
     });
-    if (!attendance) throw new NotFoundException("Davomat topilmadi");
+    if (!attendance) throw new NotFoundException("Запись посещаемости не найдена");
     if (attendance.superAdminId !== superAdminId)
-      throw new ForbiddenException("Sizda bu davomatni o'zgartirish huquqi yo'q");
+      throw new ForbiddenException("У вас нет прав на изменение этой записи");
 
     const updated = await this.prisma.attendance.update({
       where: { id },
@@ -361,9 +366,9 @@ export class AttendanceService implements OnModuleInit {
       where: { id },
       include: { worker: { select: { fullName: true } } },
     });
-    if (!attendance) throw new NotFoundException("Davomat topilmadi");
+    if (!attendance) throw new NotFoundException("Запись посещаемости не найдена");
     if (attendance.superAdminId !== superAdminId)
-      throw new ForbiddenException("Sizda bu davomatni o'chirish huquqi yo'q");
+      throw new ForbiddenException("У вас нет прав на удаление этой записи");
 
     await this.prisma.attendance.delete({ where: { id } });
 
@@ -392,7 +397,7 @@ export class AttendanceService implements OnModuleInit {
       where: { id: payload.supervisorId, superAdminId, role: Role.SUPERVISOR },
     });
     if (!supervisor)
-      throw new BadRequestException("Supervisor topilmadi yoki bu branchga tegishli emas");
+      throw new BadRequestException("Супервайзер не найден или не принадлежит этому филиалу");
 
     // Workerlarni tekshirish (faqat shu branchga tegishli bo'lganlarini)
     const workers = await this.prisma.worker.findMany({
@@ -452,9 +457,9 @@ export class AttendanceService implements OnModuleInit {
     const assignment = await this.prisma.supervisorWorker.findUnique({
       where: { id },
     });
-    if (!assignment) throw new NotFoundException("Biriktiruv topilmadi");
+    if (!assignment) throw new NotFoundException("Назначение не найдено");
     if (assignment.superAdminId !== superAdminId)
-      throw new ForbiddenException("Sizda bu biriktirishni o'chirish huquqi yo'q");
+      throw new ForbiddenException("У вас нет прав на удаление этого назначения");
 
     await this.prisma.supervisorWorker.delete({ where: { id } });
 
@@ -469,7 +474,7 @@ export class AttendanceService implements OnModuleInit {
 
     // SUPERVISOR faqat o'zining biriktirilgan workerlarini ko'ra oladi
     if (currentUser.role === Role.SUPERVISOR && currentUser.id !== supervisorId) {
-      throw new ForbiddenException("Siz faqat o'zingizga biriktirilgan workerlarni ko'ra olasiz");
+      throw new ForbiddenException("Вы можете видеть только закрепленных за вами рабочих");
     }
 
     const assignments = await this.prisma.supervisorWorker.findMany({
