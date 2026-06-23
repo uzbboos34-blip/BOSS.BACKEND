@@ -103,14 +103,13 @@ export class AttendanceService implements OnModuleInit {
       : this.dayStart(new Date());
 
     if (currentUser.role === Role.SUPERVISOR) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
+      // Calculate today's date in Uzbekistan (UTC+5) timezone to prevent server timezone mismatch
+      const uzTime = new Date(new Date().getTime() + 5 * 60 * 60 * 1000);
+      const uzTodayDate = new Date(uzTime.getUTCFullYear(), uzTime.getUTCMonth(), uzTime.getUTCDate());
+      const today = this.dayStart(uzTodayDate);
 
-      if (attendanceDate.getTime() !== today.getTime() && attendanceDate.getTime() !== yesterday.getTime()) {
-        throw new BadRequestException("Супервайзер может отправлять посещаемость только за сегодня или вчера");
+      if (attendanceDate.getTime() !== today.getTime()) {
+        throw new BadRequestException("Супервайзер может отправлять посещаемость только за сегодняшний день");
       }
     }
 
