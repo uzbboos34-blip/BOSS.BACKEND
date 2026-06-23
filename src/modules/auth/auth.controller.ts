@@ -11,6 +11,23 @@ import { AuthGuard } from "src/common/guards/token.guard";
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Get("app-version")
+  @ApiOperation({ summary: "Get latest app version from Vercel" })
+  async getAppVersion() {
+    try {
+      const response = await fetch("https://boss-frontent.vercel.app/version.json?t=" + Date.now(), {
+        headers: { "Cache-Control": "no-cache" }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return { success: true, ...data };
+      }
+      return { success: false, message: `Server returned status ${response.status}` };
+    } catch (e) {
+      return { success: false, message: e.message || "Failed to fetch version info" };
+    }
+  }
+
   @Post("login")
   @ApiOperation({ summary: "Tizimga kirish" })
   login(@Body() payload: LoginDto) {
